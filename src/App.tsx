@@ -3,6 +3,7 @@ import { Flame } from "lucide-react"
 import { AppProvider } from "@/context/AppContext"
 import ProfileSetup from "@/pages/ProfileSetup"
 import Dashboard from "@/pages/Dashboard"
+import EditProfile from "@/pages/EditProfile"
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<ProfileSetup />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/edit" element={<EditProfile />} />
         </Routes>
       </BrowserRouter>
     </AppProvider>

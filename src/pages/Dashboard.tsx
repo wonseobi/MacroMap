@@ -1,20 +1,21 @@
 import { useMemo } from "react"
 import { Link, Navigate } from "react-router-dom"
-import { Pencil, Trash2 } from "lucide-react"
-import BlurText from "@/components/BlurText"
+import { Flame, Pencil, Trash2 } from "lucide-react"
+import TypingTitle from "@/components/TypingTitle"
 import MacroRing from "@/components/MacroRing"
 import FoodSearch from "@/components/FoodSearch"
 import { useApp } from "@/context/AppContext"
 import { calculateTargets, bmiCategory } from "@/lib/calculations"
 
-const GOAL_LABELS = {
+const GOAL_LABELS: Record<string, string> = {
   lose: "Losing fat",
   maintain: "Maintaining",
   gain: "Building muscle",
-} as const
+  custom: "Custom goal",
+}
 
 export default function Dashboard() {
-  const { profile, foodLog, removeFood, clearLog } = useApp()
+  const { profile, todayLog, streak, removeFood, clearToday } = useApp()
 
   const targets = useMemo(
     () => (profile ? calculateTargets(profile) : null),
@@ -23,7 +24,7 @@ export default function Dashboard() {
 
   if (!profile || !targets) return <Navigate to="/" replace />
 
-  const consumed = foodLog.reduce(
+  const consumed = todayLog.reduce(
     (acc, e) => ({
       calories: acc.calories + e.calories,
       protein: acc.protein + e.proteinG,
@@ -35,18 +36,24 @@ export default function Dashboard() {
     <div className="mx-auto max-w-3xl px-4 py-12">
       <div className="mb-8 flex items-start justify-between">
         <div>
-          <BlurText
+          <TypingTitle
             text={`Hey, ${profile.name}`}
-            animateBy="words"
+            typingSpeed={40}
             className="text-3xl font-bold"
           />
           <p className="mt-1 text-sm text-muted">
-            {GOAL_LABELS[profile.goal]} · training {profile.trainingFrequency}
-            ×/week
+            {GOAL_LABELS[profile.goal]} · training {profile.trainingFrequency}×/week
+          </p>
+          <p className="mt-2 flex items-center gap-1.5 text-sm">
+            <Flame className="size-4 text-accent" />
+            <span className="font-semibold tabular-nums">{streak}</span>
+            <span className="text-muted">
+              day streak{streak === 0 && " — log a food to start one"}
+            </span>
           </p>
         </div>
         <Link
-          to="/"
+          to="/edit"
           className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
         >
           <Pencil className="size-3.5" />
@@ -54,18 +61,16 @@ export default function Dashboard() {
         </Link>
       </div>
 
+      {/* Stats row */}
       <div className="mb-6 grid grid-cols-2 gap-4 rounded-xl border border-border bg-surface p-6 sm:grid-cols-4">
         <Stat label="BMI" value={targets.bmi.toFixed(1)} sub={bmiCategory(targets.bmi)} />
         <Stat label="BMR" value={targets.bmr.toLocaleString()} sub="kcal/day" />
         <Stat label="TDEE" value={targets.tdee.toLocaleString()} sub="kcal/day" />
-        <Stat
-          label="Weight"
-          value={profile.weightKg.toLocaleString()}
-          sub="kg"
-        />
+        <Stat label="Weight" value={profile.weightKg.toLocaleString()} sub="kg" />
       </div>
 
-      <div className="mb-6 flex flex-wrap items-center justify-around gap-8 rounded-xl border border-border bg-surface p-8">
+      {/* Macro rings */}
+      <div className="mb-6 flex flex-wrap items-center justify-around gap-6 rounded-xl border border-border bg-surface p-8">
         <MacroRing
           label="Calories"
           value={consumed.calories}
@@ -79,6 +84,22 @@ export default function Dashboard() {
           value={consumed.protein}
           target={targets.proteinTargetG}
           unit="g"
+          color="var(--color-danger)"
+          dimColor="#7f1d1d"
+        />
+        <MacroRing
+          label="Carbs"
+          value={0}
+          target={targets.carbTargetG}
+          unit="g"
+          color="var(--color-amber)"
+          dimColor="#78350f"
+        />
+        <MacroRing
+          label="Fat"
+          value={0}
+          target={targets.fatTargetG}
+          unit="g"
           color="var(--color-protein)"
           dimColor="var(--color-protein-dim)"
         />
@@ -90,31 +111,28 @@ export default function Dashboard() {
         <div className="rounded-xl border border-border bg-surface p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Today's log</h2>
-            {foodLog.length > 0 && (
+            {todayLog.length > 0 && (
               <button
                 type="button"
-                onClick={clearLog}
+                onClick={clearToday}
                 className="text-xs text-muted transition-colors hover:text-danger"
               >
                 Clear all
               </button>
             )}
           </div>
-          {foodLog.length === 0 ? (
+          {todayLog.length === 0 ? (
             <p className="text-sm text-muted">
               Nothing logged yet. Search a food above to get started.
             </p>
           ) : (
             <ul className="divide-y divide-border">
-              {foodLog.map((entry) => (
+              {todayLog.map((entry) => (
                 <li key={entry.id} className="flex items-center gap-3 py-2.5">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {entry.label}
-                    </p>
+                    <p className="truncate text-sm font-medium">{entry.label}</p>
                     <p className="text-xs text-muted">
-                      {entry.quantity} {entry.unit} · {entry.calories} kcal ·{" "}
-                      {entry.proteinG} g protein
+                      {entry.quantity} {entry.unit} · {entry.calories} kcal · {entry.proteinG} g protein
                     </p>
                   </div>
                   <button
@@ -135,15 +153,7 @@ export default function Dashboard() {
   )
 }
 
-function Stat({
-  label,
-  value,
-  sub,
-}: {
-  label: string
-  value: string
-  sub: string
-}) {
+function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <div>
       <p className="text-xs text-muted uppercase">{label}</p>
