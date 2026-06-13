@@ -12,7 +12,18 @@
   --color-protein: #60a5fa;
   --color-protein-dim: #1e3a8a;
   --color-danger: #f87171;
+  --color-amber: #fbbf24;
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* Hide number input spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }
 
 html {

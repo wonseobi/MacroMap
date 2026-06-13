@@ -6,6 +6,7 @@ import {
   type FoodSearchResult,
 } from "@/lib/foodApi"
 import { useApp } from "@/context/AppContext"
+import { dayKey } from "@/lib/db"
 
 /** Search foods (Edamam API or built-in fallback) and add them to the log. */
 export default function FoodSearch() {
@@ -44,6 +45,7 @@ export default function FoodSearch() {
     const factor = g / 100
     addFood({
       id: `${food.foodId}-${Date.now()}`,
+      date: dayKey(),
       label: food.label,
       calories: Math.round(food.caloriesPer100g * factor),
       proteinG: Math.round(food.proteinPer100g * factor * 10) / 10,
