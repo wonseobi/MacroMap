@@ -64,6 +64,21 @@ export async function deleteEntriesForDay(date: string): Promise<void> {
 }
 
 /**
+ * Restore a backup: overwrite the profile and merge food-log entries by id
+ * (bulkPut upserts, so re-importing the same file never duplicates entries).
+ * Runs in a single transaction so a partial failure leaves nothing half-written.
+ */
+export async function importBackup(
+  profile: Profile | null,
+  entries: FoodLogEntry[]
+): Promise<void> {
+  await db.transaction("rw", db.profile, db.foodLog, async () => {
+    if (profile) await db.profile.put({ ...profile, id: 1 })
+    if (entries.length) await db.foodLog.bulkPut(entries)
+  })
+}
+
+/**
  * One-time migration from the original localStorage persistence.
  * Old entries had no `date` field; it is derived from `loggedAt`.
  */

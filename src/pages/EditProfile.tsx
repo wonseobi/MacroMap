@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from "react"
+import { useRef, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
-import { Check } from "lucide-react"
+import { Check, Download, Upload, Loader2 } from "lucide-react"
 import { useApp } from "@/context/AppContext"
+import { exportData, importData } from "@/lib/backup"
 import {
   calculateBmi,
   bmiCategory,
@@ -144,6 +145,29 @@ export default function EditProfile() {
     e.preventDefault()
     setProfile(draftProfile)
     navigate("/dashboard")
+  }
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importState, setImportState] = useState<
+    { type: "idle" | "loading" } | { type: "error"; message: string }
+  >({ type: "idle" })
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = "" // let the same file be re-picked later
+    if (!file) return
+    setImportState({ type: "loading" })
+    try {
+      await importData(file)
+      // Full reload so the context and this form re-init from the restored
+      // data, landing on the dashboard to show the recovered rings + streak.
+      window.location.href = "/dashboard"
+    } catch (err) {
+      setImportState({
+        type: "error",
+        message: err instanceof Error ? err.message : "Import failed.",
+      })
+    }
   }
 
   return (
@@ -367,6 +391,54 @@ export default function EditProfile() {
             </div>
           </Section>
         )}
+
+        {/* ── Backup & restore ── */}
+        <Section title="Backup & restore">
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Download all your data — profile, every logged food, and your
+              streak — as one compact file, then import it on another device or
+              the live site.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void exportData()}
+                className="flex items-center justify-center gap-2 rounded-full border border-border bg-background py-3 text-sm font-semibold transition-colors hover:border-accent hover:text-accent"
+              >
+                <Download className="size-4" />
+                Download my data
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importState.type === "loading"}
+                className="flex items-center justify-center gap-2 rounded-full border border-border bg-background py-3 text-sm font-semibold transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+              >
+                {importState.type === "loading" ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Upload className="size-4" />
+                )}
+                Import data
+              </button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".gz,.json,application/gzip,application/json"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            {importState.type === "error" && (
+              <p className="text-sm text-danger">{importState.message}</p>
+            )}
+            <p className="text-xs text-muted">
+              Importing merges the file into your current data — nothing is
+              deleted.
+            </p>
+          </div>
+        </Section>
 
         <button
           type="submit"
