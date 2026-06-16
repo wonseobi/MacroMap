@@ -11,6 +11,9 @@ import {
 } from "@/lib/calculations"
 import type { Goal, Sex } from "@/types"
 import { cn } from "@/lib/utils"
+import Card from "@/components/Card"
+import TypingTitle from "@/components/TypingTitle"
+import BrandMark from "@/components/BrandMark"
 
 // ─── BMI Bar (same as ProfileSetup, always visible) ──────────────────────────
 
@@ -145,7 +148,8 @@ export default function EditProfile() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-10">
-      <h1 className="mb-1 text-3xl font-bold">Edit profile</h1>
+      <BrandMark />
+      <TypingTitle text="My Profile" className="mb-1 text-3xl font-bold" />
       <p className="mb-8 text-sm text-muted">All your stats in one place.</p>
 
       <form onSubmit={handleSubmit} className="space-y-8">
@@ -333,18 +337,33 @@ export default function EditProfile() {
         {/* ── Live targets preview ── */}
         {targets && (
           <Section title="Your updated targets">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[
-                { label: "Calories", value: `${targets.calorieTarget.toLocaleString()} kcal`, color: "text-accent" },
-                { label: "Protein", value: `${targets.proteinTargetG} g`, color: "text-danger" },
-                { label: "Carbs", value: `${targets.carbTargetG} g`, color: "text-amber" },
-                { label: "Fat", value: `${targets.fatTargetG} g`, color: "text-protein" },
-              ].map((m) => (
-                <div key={m.label} className="rounded-xl border border-border bg-surface p-3 text-center">
-                  <p className={`text-xs font-medium uppercase ${m.color}`}>{m.label}</p>
-                  <p className="mt-1 font-bold tabular-nums">{m.value}</p>
-                </div>
-              ))}
+            <div className="space-y-4">
+              {/* Calories headline */}
+              <div className="flex items-baseline justify-between border-b border-border pb-4">
+                <span className="text-xs font-medium uppercase text-accent">Daily calories</span>
+                <span className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold tabular-nums">
+                    {targets.calorieTarget.toLocaleString()}
+                  </span>
+                  <span className="text-sm text-accent">kcal</span>
+                </span>
+              </div>
+              {/* Macro split */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "Protein", value: targets.proteinTargetG, color: "text-danger" },
+                  { label: "Carbs", value: targets.carbTargetG, color: "text-amber" },
+                  { label: "Fat", value: targets.fatTargetG, color: "text-protein" },
+                ].map((m) => (
+                  <div key={m.label} className="rounded-xl bg-background p-3 text-center">
+                    <p className={`text-xs font-medium uppercase ${m.color}`}>{m.label}</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums">
+                      {m.value}
+                      <span className={`ml-0.5 text-xs font-normal ${m.color}`}>g</span>
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           </Section>
         )}
@@ -363,8 +382,8 @@ export default function EditProfile() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h2 className="mb-4 text-xs font-semibold uppercase tracking-widest text-muted">{title}</h2>
-      <div className="rounded-2xl border border-border bg-surface p-5">{children}</div>
+      <h2 className="mb-4 text-base font-semibold">{title}</h2>
+      <Card className="p-5">{children}</Card>
     </div>
   )
 }

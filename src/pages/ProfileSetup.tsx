@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react"
+import { useState, useEffect, useRef, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import { ChevronLeft, ChevronRight, Check } from "lucide-react"
 import TypingTitle from "@/components/TypingTitle"
@@ -10,6 +10,7 @@ import {
   bmiColor,
   calculateTargets,
   activityLabel,
+  estimatedTimeToGoal,
 } from "@/lib/calculations"
 import type { Goal, Sex } from "@/types"
 import { cn } from "@/lib/utils"
@@ -99,6 +100,7 @@ type StepId =
   | "weight"
   | "training"
   | "goal"
+  | "goal-weight"
   | "summary"
 
 const STEPS: { id: StepId; question: string }[] = [
@@ -109,6 +111,7 @@ const STEPS: { id: StepId; question: string }[] = [
   { id: "weight", question: "What's your current weight?" },
   { id: "training", question: "What is your activity level?" },
   { id: "goal", question: "What's your goal?" },
+  { id: "goal-weight", question: "What is your target weight?" },
   { id: "summary", question: "" },
 ]
 
@@ -140,6 +143,9 @@ export default function ProfileSetup() {
   const [customSign, setCustomSign] = useState<"surplus" | "deficit">(
     (profile?.customKcalAdjustment ?? 0) >= 0 ? "surplus" : "deficit"
   )
+  const [goalWeightKg, setGoalWeightKg] = useState(
+    profile?.goalWeightKg ? String(profile.goalWeightKg) : ""
+  )
 
   const current = STEPS[step]
   const height = parseFloat(heightCm)
@@ -147,6 +153,16 @@ export default function ProfileSetup() {
   const parsedAge = parseInt(age, 10)
   const customKcalValue =
     customSign === "deficit" ? -Math.abs(parseFloat(customKcal) || 0) : Math.abs(parseFloat(customKcal) || 0)
+  const parsedGoalWeight = parseFloat(goalWeightKg)
+
+  const goalWeightValid = (() => {
+    const gw = parsedGoalWeight
+    if (isNaN(gw) || gw < 30 || gw > 300) return false
+    if (goal === "lose") return gw < weight
+    if (goal === "gain") return gw > weight
+    if (goal === "custom") return customKcalValue > 0 ? gw > weight : gw < weight
+    return false
+  })()
 
   const stepValid: Record<StepId, boolean> = {
     name: name.trim().length > 0,
@@ -156,6 +172,7 @@ export default function ProfileSetup() {
     weight: weight >= 30 && weight <= 300,
     training: true,
     goal: goal !== "custom" || parseFloat(customKcal) > 0,
+    "goal-weight": goalWeightValid,
     summary: true,
   }
   const canAdvance = stepValid[current.id]
@@ -169,13 +186,28 @@ export default function ProfileSetup() {
     trainingFrequency: Math.round(trainingFrequency),
     goal,
     customKcalAdjustment: goal === "custom" ? customKcalValue : undefined,
+    goalWeightKg: goal !== "maintain" && !isNaN(parsedGoalWeight) && parsedGoalWeight > 0
+      ? parsedGoalWeight
+      : undefined,
   }
 
-  const next = () => { if (canAdvance && step < STEPS.length - 1) setStep(step + 1) }
-  const back = () => step > 0 && setStep(step - 1)
+  const next = () => {
+    if (!canAdvance) return
+    let nextStep = step + 1
+    if (STEPS[nextStep]?.id === "goal-weight" && goal === "maintain") nextStep++
+    if (nextStep < STEPS.length) setStep(nextStep)
+  }
+  const back = () => {
+    if (step <= 0) return
+    let prevStep = step - 1
+    if (STEPS[prevStep]?.id === "goal-weight" && goal === "maintain") prevStep--
+    setStep(prevStep)
+  }
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
+  // Single advance path. Kept in a ref so the global key listener always sees
+  // the latest step/validity without re-subscribing each render.
+  const advanceRef = useRef<() => void>(() => {})
+  advanceRef.current = () => {
     if (current.id === "summary") {
       setProfile(draftProfile)
       navigate("/dashboard")
@@ -184,11 +216,28 @@ export default function ProfileSetup() {
     }
   }
 
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    advanceRef.current()
+  }
+
+  // Button-only steps (sex, activity, goal, summary) have no focused text input,
+  // so the form never submits on Enter. Advance on Enter from anywhere instead.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.isComposing) return
+      e.preventDefault()
+      advanceRef.current()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
   const summaryTitle = `Here's your plan, ${name.trim() || "you"}`
   const isSummary = current.id === "summary"
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-65px)] max-w-lg flex-col px-4 py-10">
+    <div className="mx-auto flex min-h-screen max-w-lg animate-page-enter flex-col px-4 py-10">
       {/* Progress bar */}
       <div className="mb-10 flex items-center gap-2">
         {STEPS.map((s, i) => (
@@ -396,6 +445,36 @@ export default function ProfileSetup() {
             </div>
           )}
 
+          {/* ── Goal Weight ── */}
+          {current.id === "goal-weight" && (
+            <div>
+              <div className="relative">
+                <input
+                  autoFocus
+                  type="number"
+                  min={30}
+                  max={300}
+                  step="0.1"
+                  value={goalWeightKg}
+                  onChange={(e) => setGoalWeightKg(e.target.value)}
+                  placeholder={goal === "lose" ? "65" : "80"}
+                  className={inputClass}
+                />
+                <span className="absolute top-1/2 right-4 -translate-y-1/2 text-muted">kg</span>
+              </div>
+              {weight > 0 && (
+                <p className="mt-3 text-sm text-muted">
+                  Current weight:{" "}
+                  <span className="text-foreground">{weight} kg</span>
+                  {goal === "lose" && " · target must be less than current"}
+                  {goal === "gain" && " · target must be more than current"}
+                  {goal === "custom" && customKcalValue < 0 && " · target must be less than current"}
+                  {goal === "custom" && customKcalValue > 0 && " · target must be more than current"}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* ── Summary ── */}
           {current.id === "summary" && <Summary draft={draftProfile} />}
         </div>
@@ -444,6 +523,12 @@ const STAT_COLORS = ["text-accent", "text-protein", "text-amber"] as const
 
 function Summary({ draft }: { draft: Parameters<typeof calculateTargets>[0] }) {
   const t = calculateTargets(draft)
+  const kcalAdj = t.calorieTarget - t.tdee
+  const eta =
+    draft.goalWeightKg != null
+      ? estimatedTimeToGoal(draft.weightKg, draft.goalWeightKg, kcalAdj)
+      : null
+
   const stats = [
     { label: "BMI", value: t.bmi.toFixed(1), isFloat: true },
     { label: "BMR", value: t.bmr, isFloat: false },
@@ -485,6 +570,18 @@ function Summary({ draft }: { draft: Parameters<typeof calculateTargets>[0] }) {
           </p>
         </div>
       </div>
+
+      {/* Estimated Time to Goal */}
+      {eta && (
+        <div className="rounded-2xl border border-border bg-surface p-5">
+          <p className="text-xs font-medium uppercase text-muted">Estimated Time to Goal</p>
+          <p className="mt-1 text-3xl font-bold text-foreground">{eta.display}</p>
+          <p className="mt-1 text-xs text-muted">
+            {draft.weightKg} kg → {draft.goalWeightKg} kg · at {Math.abs(kcalAdj)} kcal/day{" "}
+            {kcalAdj < 0 ? "deficit" : "surplus"}
+          </p>
+        </div>
+      )}
 
       {/* BMI / BMR / TDEE */}
       <div className="grid grid-cols-3 gap-3">

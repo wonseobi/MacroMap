@@ -18,6 +18,7 @@ import {
   saveProfile,
 } from "@/lib/db"
 import { calculateStreak } from "@/lib/streak"
+import LoadingScreen from "@/components/LoadingScreen"
 
 interface AppState {
   profile: Profile | null
@@ -31,6 +32,8 @@ interface AppState {
   addFood: (entry: FoodLogEntry) => void
   removeFood: (id: string) => void
   clearToday: () => void
+  /** Remove every entry for a given day (YYYY-MM-DD) */
+  clearDay: (date: string) => void
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -39,6 +42,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [profile, setProfileState] = useState<Profile | null>(null)
   const [foodLog, setFoodLog] = useState<FoodLogEntry[]>([])
   const [ready, setReady] = useState(false)
+  // Keeps the branded splash on screen long enough to actually be seen,
+  // since the IndexedDB read usually finishes in a few ms.
+  const [minTimeUp, setMinTimeUp] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setMinTimeUp(true), 1100)
+    return () => clearTimeout(t)
+  }, [])
+
+  // Re-render at midnight so every "today"-derived value (todayLog, streak)
+  // refreshes when the calendar day rolls over while the app stays open.
+  const [, setDayTick] = useState(0)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const schedule = () => {
+      const now = new Date()
+      const nextMidnight = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+        0,
+        0,
+        5
+      )
+      timer = setTimeout(() => {
+        setDayTick((t) => t + 1)
+        schedule()
+      }, nextMidnight.getTime() - now.getTime())
+    }
+    schedule()
+    return () => clearTimeout(timer)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -73,11 +108,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void deleteEntry(id)
   }
 
-  const clearToday = () => {
-    const today = dayKey()
-    setFoodLog((log) => log.filter((e) => e.date !== today))
-    void deleteEntriesForDay(today)
+  const clearDay = (date: string) => {
+    setFoodLog((log) => log.filter((e) => e.date !== date))
+    void deleteEntriesForDay(date)
   }
+
+  const clearToday = () => clearDay(dayKey())
 
   const today = dayKey()
   const todayLog = useMemo(
@@ -85,11 +121,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [foodLog, today]
   )
   const streak = useMemo(
+    // `today` is a dep so the streak re-evaluates when the day rolls over
     () => calculateStreak(new Set(foodLog.map((e) => e.date))),
-    [foodLog]
+    [foodLog, today]
   )
 
-  if (!ready) return null // IndexedDB read is fast; avoids a profile flash
+  if (!ready || !minTimeUp) return <LoadingScreen />
 
   return (
     <AppContext.Provider
@@ -102,6 +139,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addFood,
         removeFood,
         clearToday,
+        clearDay,
       }}
     >
       {children}

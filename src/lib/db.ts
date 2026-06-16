@@ -43,7 +43,12 @@ export async function saveProfile(profile: Profile | null): Promise<void> {
 }
 
 export async function loadAllEntries(): Promise<FoodLogEntry[]> {
-  return db.foodLog.orderBy("date").reverse().toArray()
+  // Sort by the full timestamp, newest first. Ordering by the `date` index
+  // alone only resolves to day granularity, so same-day entries would tie and
+  // fall back to primary-key (id) order — scrambling the within-day sequence
+  // on reload. `loggedAt` is an ISO 8601 string, which sorts chronologically.
+  const all = await db.foodLog.toArray()
+  return all.sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))
 }
 
 export async function addEntry(entry: FoodLogEntry): Promise<void> {

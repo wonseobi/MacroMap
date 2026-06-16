@@ -13,6 +13,8 @@ export interface Profile {
   goal: Goal
   /** kcal adjustment vs TDEE when goal === "custom". Positive = surplus, negative = deficit. */
   customKcalAdjustment?: number
+  /** Target body weight in kg. Not set for "maintain" goal. */
+  goalWeightKg?: number
 }
 
 export interface MacroTargets {
@@ -33,6 +35,8 @@ export interface FoodLogEntry {
   /** Per logged quantity */
   calories: number
   proteinG: number
+  carbG?: number
+  fatG?: number
   quantity: number
   unit: string
   loggedAt: string

@@ -28,11 +28,36 @@ const GOAL_CALORIE_ADJUSTMENT: Record<string, number> = {
   gain: 300,
 }
 
+// Protein per kg bodyweight. Evidence-based ordering: deficit needs the most
+// (preserve lean mass), maintenance ≈ surplus need slightly less.
 const GOAL_PROTEIN_PER_KG: Record<string, number> = {
-  lose: 2.0,
-  maintain: 1.6,
-  gain: 1.8,
-  custom: 1.8,
+  lose: 2.2,
+  maintain: 2.0,
+  gain: 2.0,
+  custom: 2.0,
+}
+
+/**
+ * Estimated weeks to reach goal weight based on daily calorie adjustment.
+ * Uses 7,700 kcal ≈ 1 kg of body mass.
+ * Returns null when a time estimate doesn't apply (maintain, same weight, wrong direction).
+ */
+export function estimatedTimeToGoal(
+  currentWeightKg: number,
+  goalWeightKg: number,
+  dailyKcalAdjustment: number
+): { weeks: number; display: string } | null {
+  const diff = goalWeightKg - currentWeightKg
+  if (Math.abs(diff) < 0.5 || Math.abs(dailyKcalAdjustment) < 1) return null
+  // Adjustment must be in the same direction as weight change
+  if (Math.sign(diff) !== Math.sign(dailyKcalAdjustment)) return null
+
+  const days = (Math.abs(diff) * 7700) / Math.abs(dailyKcalAdjustment)
+  const weeks = Math.round(days / 7)
+  if (weeks < 1) return { weeks: 1, display: "~1 week" }
+  if (weeks <= 16) return { weeks, display: `~${weeks} week${weeks !== 1 ? "s" : ""}` }
+  const months = Math.round(weeks / 4.33)
+  return { weeks, display: `~${months} month${months !== 1 ? "s" : ""}` }
 }
 
 export function calculateBmi(heightCm: number, weightKg: number): number {
