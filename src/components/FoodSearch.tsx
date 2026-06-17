@@ -41,7 +41,7 @@ export default function FoodSearch() {
       setResults(await searchFoods(trimmed))
       setSearched(true)
     } catch {
-      setError("Food search failed. Check your API credentials.")
+      setError("Couldn't reach the food database — please try again in a moment.")
       setResults([])
     } finally {
       setLoading(false)

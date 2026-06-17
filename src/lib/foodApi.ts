@@ -90,32 +90,52 @@ function dataTypeRank(dataType?: string): number {
   return dataType && dataType in DATATYPE_RANK ? DATATYPE_RANK[dataType] : 2
 }
 
+/** Strip a trailing plural so "potatoes" → "potato", "eggs" → "egg" for matching. */
+function singularize(word: string): string {
+  return word.replace(/e?s$/, "")
+}
+
 /**
- * Relevance score (lower = higher priority) used to order results *within* a
- * dataType tier. USDA descriptions read "PrimaryFood, qualifier, qualifier",
- * so the first comma-segment is the actual food. We prioritize results where
- * the query is that head noun over ones where it's only a modifier — e.g. for
- * "egg", "Eggs, ..." ranks above "Bagels, egg"; for "chicken", "Chicken, ..."
- * ranks above "Fat, chicken". Fewer qualifiers / shorter names then surface the
- * basic individual item ahead of elaborate variants.
+ * Combined relevance score (lower = higher priority). The dominant signal is
+ * whether the query is the *primary food*: USDA descriptions read
+ * "PrimaryFood, qualifier, ...", so we want the query to be that head noun, not
+ * a trailing modifier — "potato" → "Potato, NFS" beats "Flour, potato"; "egg" →
+ * "Eggs, ..." beats "Bagels, egg". dataType (whole/generic over branded) and
+ * qualifier count only break ties *within* a head-match class, so a perfect
+ * head match in a lower USDA tier still outranks a modifier match in a higher
+ * tier (the bug this replaces, where Foundation "Flour, potato" floated to top).
  */
-function relevanceScore(description: string, query: string): number {
+function relevanceScore(
+  description: string,
+  query: string,
+  dataType?: string
+): number {
   const d = description.toLowerCase().trim()
   const q = query.toLowerCase().trim()
+  const qs = singularize(q)
   const segments = d.split(",").map((s) => s.trim())
   const head = segments[0]
-  const headFirstWord = head.split(/\s+/)[0]
+  const headWords = head.split(/\s+/)
+  const headFirst = singularize(headWords[0] ?? "")
 
   let score: number
-  if (head === q) score = -3000 // exact head: "Chicken, ..." for "chicken"
-  else if (headFirstWord === q) score = -2000 // head starts with query
-  else if (head.includes(q)) score = -1000 // query inside head word: "Eggs" ⊃ "egg"
-  else if (d.includes(q)) score = 1000 // query only in a qualifier → demote
-  else score = 2000
+  if (head === q || singularize(head) === qs) {
+    score = -10000 // query IS the head food: "Potato", "Potatoes", "Egg"
+  } else if (headFirst === qs) {
+    score = -7000 // head starts with the food: "Potato flour", "Potato, raw"
+  } else if (head.includes(q)) {
+    score = -4000 // food appears inside the head word
+  } else if (d.includes(q)) {
+    score = 5000 // food is only a qualifier → demote ("Flour, potato", "Soup, potato")
+  } else {
+    score = 8000
+  }
 
-  // Fewer qualifiers and shorter names read as the more basic/individual item.
-  score += (segments.length - 1) * 25
-  score += d.length * 0.3
+  // Tiebreakers within a head-match class — all smaller than the gaps above:
+  score += dataTypeRank(dataType) * 300 // generic/whole tiers first, branded last
+  score += (segments.length - 1) * 150 // fewer qualifiers = more whole/individual
+  score += headWords.length * 80 // simpler head ("potato" over "potato salad")
+  score += d.length * 0.5
   return score
 }
 
@@ -134,6 +154,35 @@ const MOCK_FOODS: FoodSearchResult[] = [
   { foodId: "mock-apple",       label: "Apple",                       caloriesPer100g: 52,  proteinPer100g: 0.3,  carbsPer100g: 14,   fatPer100g: 0.2  },
 ]
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Fetch with one retry on transient failures (rate-limit 429, 5xx, network). */
+async function fetchUsda(url: URL): Promise<Response> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    let res: Response
+    try {
+      res = await fetch(url)
+    } catch (err) {
+      if (attempt < 2) {
+        await delay(500)
+        continue
+      }
+      throw err
+    }
+    if (res.ok) return res
+    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+      await delay(500)
+      continue
+    }
+    throw new Error(`USDA request failed: ${res.status}`)
+  }
+  throw new Error("USDA request failed")
+}
+
+// Cache successful searches for the session so repeats don't re-hit the API
+// (faster, and keeps us comfortably under the rate limit).
+const searchCache = new Map<string, FoodSearchResult[]>()
+
 export async function searchFoods(query: string): Promise<FoodSearchResult[]> {
   const trimmed = query.trim()
   if (!trimmed) return []
@@ -142,6 +191,10 @@ export async function searchFoods(query: string): Promise<FoodSearchResult[]> {
     const q = trimmed.toLowerCase()
     return MOCK_FOODS.filter((f) => f.label.toLowerCase().includes(q))
   }
+
+  const cacheKey = trimmed.toLowerCase()
+  const cached = searchCache.get(cacheKey)
+  if (cached) return cached
 
   const url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search")
   url.searchParams.set("api_key", API_KEY!)
@@ -154,21 +207,16 @@ export async function searchFoods(query: string): Promise<FoodSearchResult[]> {
     "Foundation,SR Legacy,Survey (FNDDS),Branded"
   )
 
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`USDA request failed: ${res.status}`)
+  const res = await fetchUsda(url)
   const data: UsdaSearchResponse = await res.json()
 
-  // Order results by: (1) dataType tier — whole/generic foods above branded;
-  // (2) head-noun relevance — the actual searched food above modifier-matches
-  // and elaborate variants.
-  const ranked = [...(data.foods ?? [])].sort((a, b) => {
-    const tier = dataTypeRank(a.dataType) - dataTypeRank(b.dataType)
-    if (tier !== 0) return tier
-    return (
-      relevanceScore(a.description, trimmed) -
-      relevanceScore(b.description, trimmed)
-    )
-  })
+  // Rank by head-noun relevance (the actual searched food first), with dataType
+  // and qualifier count folded in as tiebreakers — see relevanceScore.
+  const ranked = [...(data.foods ?? [])].sort(
+    (a, b) =>
+      relevanceScore(a.description, trimmed, a.dataType) -
+      relevanceScore(b.description, trimmed, b.dataType)
+  )
 
   const seen = new Set<string>()
   const results: FoodSearchResult[] = []
@@ -195,5 +243,7 @@ export async function searchFoods(query: string): Promise<FoodSearchResult[]> {
       fatPer100g: fat,
     })
   }
-  return results.slice(0, 12)
+  const out = results.slice(0, 12)
+  searchCache.set(cacheKey, out)
+  return out
 }
