@@ -1,10 +1,15 @@
 import Dexie, { type EntityTable } from "dexie"
-import type { Profile, FoodLogEntry } from "@/types"
+import type {
+  Profile,
+  FoodLogEntry,
+  WeightEntry,
+  FavoriteFood,
+} from "@/types"
 
 /**
- * Local persistence via IndexedDB (Dexie). Holds the user profile and the
- * full food-log history indexed by day, which also powers streaks and the
- * upcoming calendar feature.
+ * Local persistence via IndexedDB (Dexie). Holds the user profile, the full
+ * food-log history (which powers streaks, the calendar, and summaries), a
+ * bodyweight log, and starred foods.
  */
 
 interface StoredProfile extends Profile {
@@ -15,11 +20,21 @@ interface StoredProfile extends Profile {
 export const db = new Dexie("macromap") as Dexie & {
   profile: EntityTable<StoredProfile, "id">
   foodLog: EntityTable<FoodLogEntry, "id">
+  weightLog: EntityTable<WeightEntry, "id">
+  favorites: EntityTable<FavoriteFood, "foodId">
 }
 
 db.version(1).stores({
   profile: "id",
   foodLog: "id, date",
+})
+
+// v2 adds bodyweight tracking and starred foods.
+db.version(2).stores({
+  profile: "id",
+  foodLog: "id, date",
+  weightLog: "id, date",
+  favorites: "foodId, addedAt",
 })
 
 /** Local calendar day as YYYY-MM-DD (not UTC — log days follow the user's clock). */
@@ -63,6 +78,42 @@ export async function deleteEntriesForDay(date: string): Promise<void> {
   await db.foodLog.where("date").equals(date).delete()
 }
 
+/** Update an existing food-log entry in place (used by inline editing). */
+export async function updateEntry(entry: FoodLogEntry): Promise<void> {
+  await db.foodLog.put(entry)
+}
+
+// ── Weight log ──────────────────────────────────────────────────────────────
+
+export async function loadWeightLog(): Promise<WeightEntry[]> {
+  const all = await db.weightLog.toArray()
+  return all.sort((a, b) => a.date.localeCompare(b.date)) // oldest → newest for charting
+}
+
+/** One weight per day: putting on a date key replaces that day's measurement. */
+export async function saveWeight(entry: WeightEntry): Promise<void> {
+  await db.weightLog.put(entry)
+}
+
+export async function deleteWeight(id: string): Promise<void> {
+  await db.weightLog.delete(id)
+}
+
+// ── Favorites ───────────────────────────────────────────────────────────────
+
+export async function loadFavorites(): Promise<FavoriteFood[]> {
+  const all = await db.favorites.toArray()
+  return all.sort((a, b) => b.addedAt.localeCompare(a.addedAt)) // newest first
+}
+
+export async function saveFavorite(fav: FavoriteFood): Promise<void> {
+  await db.favorites.put(fav)
+}
+
+export async function deleteFavorite(foodId: string): Promise<void> {
+  await db.favorites.delete(foodId)
+}
+
 /**
  * Restore a backup: overwrite the profile and merge food-log entries by id
  * (bulkPut upserts, so re-importing the same file never duplicates entries).
@@ -70,12 +121,42 @@ export async function deleteEntriesForDay(date: string): Promise<void> {
  */
 export async function importBackup(
   profile: Profile | null,
-  entries: FoodLogEntry[]
+  entries: FoodLogEntry[],
+  weights: WeightEntry[] = [],
+  favorites: FavoriteFood[] = []
 ): Promise<void> {
-  await db.transaction("rw", db.profile, db.foodLog, async () => {
-    if (profile) await db.profile.put({ ...profile, id: 1 })
-    if (entries.length) await db.foodLog.bulkPut(entries)
-  })
+  await db.transaction(
+    "rw",
+    db.profile,
+    db.foodLog,
+    db.weightLog,
+    db.favorites,
+    async () => {
+      if (profile) await db.profile.put({ ...profile, id: 1 })
+      if (entries.length) await db.foodLog.bulkPut(entries)
+      if (weights.length) await db.weightLog.bulkPut(weights)
+      if (favorites.length) await db.favorites.bulkPut(favorites)
+    }
+  )
+}
+
+/** Wipe all user data (used by Settings → Reset). */
+export async function resetAllData(): Promise<void> {
+  await db.transaction(
+    "rw",
+    db.profile,
+    db.foodLog,
+    db.weightLog,
+    db.favorites,
+    async () => {
+      await Promise.all([
+        db.profile.clear(),
+        db.foodLog.clear(),
+        db.weightLog.clear(),
+        db.favorites.clear(),
+      ])
+    }
+  )
 }
 
 /**

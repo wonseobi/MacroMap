@@ -1,15 +1,27 @@
-import type { Profile, FoodLogEntry } from "@/types"
-import { dayKey, loadProfile, loadAllEntries, importBackup } from "@/lib/db"
+import type {
+  Profile,
+  FoodLogEntry,
+  WeightEntry,
+  FavoriteFood,
+} from "@/types"
+import {
+  dayKey,
+  loadProfile,
+  loadAllEntries,
+  loadWeightLog,
+  loadFavorites,
+  importBackup,
+} from "@/lib/db"
 
 /**
- * Export/import the user's entire dataset (profile + full food log) as a single
- * gzip-compressed JSON file, so it can be moved between devices/deployments.
- * Streaks, calendar, and roadmap progress are all derived from these two, so
- * restoring them rebuilds everything else automatically.
+ * Export/import the user's entire dataset (profile, food log, weight log, and
+ * favorites) as a single gzip-compressed JSON file, so it can be moved between
+ * devices/deployments. Streaks, calendar, summaries, and roadmap progress are
+ * all derived from these, so restoring them rebuilds everything else.
  */
 
 const APP_TAG = "macromap"
-const FORMAT_VERSION = 1
+const FORMAT_VERSION = 2
 
 interface BackupFile {
   app: string
@@ -17,6 +29,8 @@ interface BackupFile {
   exportedAt: string
   profile: Profile | null
   foodLog: FoodLogEntry[]
+  weightLog?: WeightEntry[]
+  favorites?: FavoriteFood[]
 }
 
 const gzipSupported =
@@ -39,9 +53,11 @@ async function gunzip(buffer: ArrayBuffer): Promise<string> {
 
 /** Read everything from IndexedDB and trigger a download of the backup file. */
 export async function exportData(): Promise<void> {
-  const [profile, foodLog] = await Promise.all([
+  const [profile, foodLog, weightLog, favorites] = await Promise.all([
     loadProfile(),
     loadAllEntries(),
+    loadWeightLog(),
+    loadFavorites(),
   ])
   const payload: BackupFile = {
     app: APP_TAG,
@@ -49,6 +65,8 @@ export async function exportData(): Promise<void> {
     exportedAt: new Date().toISOString(),
     profile,
     foodLog,
+    weightLog,
+    favorites,
   }
   const json = JSON.stringify(payload)
 
@@ -90,6 +108,11 @@ export async function importData(file: File): Promise<ImportResult> {
     throw new Error("That file isn't a valid MacroMap backup.")
   }
 
-  await importBackup(data.profile ?? null, data.foodLog)
+  await importBackup(
+    data.profile ?? null,
+    data.foodLog,
+    Array.isArray(data.weightLog) ? data.weightLog : [],
+    Array.isArray(data.favorites) ? data.favorites : []
+  )
   return { foods: data.foodLog.length, hadProfile: Boolean(data.profile) }
 }

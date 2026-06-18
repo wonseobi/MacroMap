@@ -3,6 +3,8 @@ import { Navigate } from "react-router-dom"
 import { ChevronLeft, ChevronRight, Flame } from "lucide-react"
 import Card from "@/components/Card"
 import ProgressChart from "@/components/ProgressChart"
+import PeriodSummary from "@/components/PeriodSummary"
+import WeightTracker from "@/components/WeightTracker"
 import TypingTitle from "@/components/TypingTitle"
 import BrandMark from "@/components/BrandMark"
 import DayDetailModal from "@/components/DayDetailModal"
@@ -121,7 +123,11 @@ export default function CalendarPage() {
         </div>
       </Card>
 
+      <PeriodSummary />
+
       <ProgressChart />
+
+      <WeightTracker />
       </div>
 
       {selectedDay && (

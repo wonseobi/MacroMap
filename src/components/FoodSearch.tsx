@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ChevronDown, Loader2, Plus, Search, X } from "lucide-react"
+import { ChevronDown, Loader2, Plus, Search, Star, X } from "lucide-react"
 import {
   searchFoods,
   isLiveApiConfigured,
@@ -12,19 +12,29 @@ import { playLogSound } from "@/lib/sound"
 import Card from "@/components/Card"
 import { cn } from "@/lib/utils"
 
-/** Search foods (USDA FoodData Central API or built-in fallback) and log them. */
+/** Nutrition shape shared by search results and starred favorites. */
+interface FoodItem {
+  foodId: string
+  label: string
+  caloriesPer100g: number
+  proteinPer100g: number
+  carbsPer100g: number
+  fatPer100g: number
+  brand?: string
+}
+
+/** Search foods (USDA) or pick from favorites, then add them to the log. */
 export default function FoodSearch() {
-  const { addFood } = useApp()
+  const { addFood, favorites, addFavorite, removeFavorite, isFavorite } = useApp()
+  const [tab, setTab] = useState<"search" | "favorites">("search")
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<FoodSearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [searched, setSearched] = useState(false)
   const [qty, setQty] = useState<Record<string, string>>({})
   const [unit, setUnit] = useState<Record<string, Unit>>({})
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set())
-  // True once a search has actually run, so "No foods found" only shows
-  // after the user presses Enter — not while they're still typing.
-  const [searched, setSearched] = useState(false)
 
   // Search fires on Enter (not per keystroke) to stay well under API rate limits.
   const runSearch = async () => {
@@ -55,16 +65,14 @@ export default function FoodSearch() {
     setSearched(false)
   }
 
-  const handleAdd = (food: FoodSearchResult) => {
-    if (addingIds.has(food.foodId)) return // Prevent double-clicks
+  const handleAdd = (food: FoodItem) => {
+    if (addingIds.has(food.foodId)) return // prevent double-clicks
 
     const quantity = parseFloat(qty[food.foodId] ?? "100") || 100
     const u = unit[food.foodId] ?? "g"
     const factor = toGrams(quantity, u) / 100 // data is per 100 g
 
-    // Mark as pending to prevent rapid re-clicks
     setAddingIds((ids) => new Set([...ids, food.foodId]))
-
     addFood({
       id: `${food.foodId}-${Date.now()}`,
       date: dayKey(),
@@ -78,121 +86,223 @@ export default function FoodSearch() {
       loggedAt: new Date().toISOString(),
     })
     playLogSound()
-
-    // Clear pending state after a short delay
     setTimeout(() => {
       setAddingIds((ids) => {
-        const newIds = new Set(ids)
-        newIds.delete(food.foodId)
-        return newIds
+        const next = new Set(ids)
+        next.delete(food.foodId)
+        return next
       })
     }, 100)
   }
 
+  const toggleFavorite = (food: FoodItem) => {
+    if (isFavorite(food.foodId)) {
+      removeFavorite(food.foodId)
+    } else {
+      addFavorite({ ...food, addedAt: new Date().toISOString() })
+    }
+  }
+
+  const setUnitFor = (foodId: string, u: Unit) => {
+    setUnit((m) => ({ ...m, [foodId]: u }))
+    // Reset to a sensible default: 100 for small units, 1 otherwise.
+    setQty((q) => ({ ...q, [foodId]: u === "g" || u === "ml" ? "100" : "1" }))
+  }
+
+  const renderRow = (food: FoodItem) => (
+    <FoodRow
+      key={food.foodId}
+      food={food}
+      qty={qty[food.foodId] ?? "100"}
+      onQty={(v) => setQty((q) => ({ ...q, [food.foodId]: v }))}
+      unit={unit[food.foodId] ?? "g"}
+      onUnit={(u) => setUnitFor(food.foodId, u)}
+      isFav={isFavorite(food.foodId)}
+      onToggleFav={() => toggleFavorite(food)}
+      isAdding={addingIds.has(food.foodId)}
+      onAdd={() => handleAdd(food)}
+    />
+  )
+
   return (
     <Card className="p-5">
       <h2 className="mb-4 text-base font-semibold">Log food</h2>
-      {!isLiveApiConfigured && (
-        <p className="mb-3 text-xs text-muted">
-          Using sample food data — add a USDA API key in{" "}
-          <code className="rounded bg-background px-1 py-0.5">.env.local</code>{" "}
-          for live search.
-        </p>
-      )}
 
-      <div className="relative">
-        <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-            setSearched(false)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault()
-              void runSearch()
-            }
-          }}
-          placeholder="Search foods… press Enter to search"
-          className="w-full rounded-lg border border-border bg-background py-2.5 pr-9 pl-9 text-sm outline-none transition-colors placeholder:text-muted focus:border-accent"
-        />
-        {loading ? (
-          <Loader2 className="absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin text-muted" />
-        ) : query ? (
-          <button
-            type="button"
-            onClick={clearSearch}
-            aria-label="Clear search"
-            className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-md p-1 text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
-        ) : null}
+      {/* Tabs */}
+      <div className="mb-4 flex items-center gap-2">
+        <TabButton active={tab === "search"} onClick={() => setTab("search")}>
+          Search
+        </TabButton>
+        <TabButton
+          active={tab === "favorites"}
+          onClick={() => setTab("favorites")}
+        >
+          Favorites{favorites.length > 0 && ` · ${favorites.length}`}
+        </TabButton>
       </div>
 
-      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+      {tab === "search" ? (
+        <>
+          {!isLiveApiConfigured && (
+            <p className="mb-3 text-xs text-muted">
+              Using sample food data — add a USDA API key in{" "}
+              <code className="rounded bg-background px-1 py-0.5">.env.local</code>{" "}
+              for live search.
+            </p>
+          )}
 
-      {results.length > 0 && (
-        <ul className="mt-3 divide-y divide-border">
-          {results.map((food) => (
-            <li key={food.foodId} className="flex items-center gap-2 py-2.5">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {food.label}
-                  {food.brand && (
-                    <span className="ml-1 text-xs text-muted">· {food.brand}</span>
-                  )}
-                </p>
-                <p className="text-xs text-muted">
-                  {food.caloriesPer100g} kcal · {food.proteinPer100g} g protein / 100 g
-                </p>
-              </div>
-              <input
-                type="number"
-                min={0}
-                step="any"
-                value={qty[food.foodId] ?? "100"}
-                onChange={(e) =>
-                  setQty((q) => ({ ...q, [food.foodId]: e.target.value }))
+          <div className="relative">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value)
+                setSearched(false)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  void runSearch()
                 }
-                className="w-16 rounded-lg border border-border bg-background px-2 py-1.5 text-right text-sm outline-none focus:border-accent"
-                aria-label={`Quantity of ${food.label}`}
-              />
-              <UnitSelect
-                value={unit[food.foodId] ?? "g"}
-                onChange={(u) => {
-                  setUnit((m) => ({ ...m, [food.foodId]: u }))
-                  // Reset to a sensible default: 100 for small units, 1 otherwise
-                  setQty((q) => ({
-                    ...q,
-                    [food.foodId]: u === "g" || u === "ml" ? "100" : "1",
-                  }))
-                }}
-              />
+              }}
+              placeholder="Search foods… press Enter to search"
+              className="w-full rounded-lg border border-border bg-background py-2.5 pr-9 pl-9 text-sm outline-none transition-colors placeholder:text-muted focus:border-accent"
+            />
+            {loading ? (
+              <Loader2 className="absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin text-muted" />
+            ) : query ? (
               <button
                 type="button"
-                onClick={() => handleAdd(food)}
-                disabled={addingIds.has(food.foodId)}
-                className="rounded-lg bg-accent/10 p-2 text-accent transition-colors hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label={`Add ${food.label}`}
+                onClick={clearSearch}
+                aria-label="Clear search"
+                className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-md p-1 text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
               >
-                {addingIds.has(food.foodId) ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Plus className="size-4" />
-                )}
+                <X className="size-4" />
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
+            ) : null}
+          </div>
 
-      {!loading && searched && results.length === 0 && !error && (
-        <p className="mt-3 text-sm text-muted">No foods found.</p>
+          {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+
+          {results.length > 0 && (
+            <ul className="mt-3 divide-y divide-border">
+              {results.map(renderRow)}
+            </ul>
+          )}
+
+          {!loading && searched && results.length === 0 && !error && (
+            <p className="mt-3 text-sm text-muted">No foods found.</p>
+          )}
+        </>
+      ) : favorites.length === 0 ? (
+        <p className="text-sm text-muted">
+          No favorites yet. Tap the <Star className="inline size-3.5 -translate-y-px" /> on
+          a search result to save it here for one-tap logging.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border">{favorites.map(renderRow)}</ul>
       )}
     </Card>
+  )
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+        active
+          ? "bg-foreground/10 text-foreground"
+          : "text-muted hover:bg-surface-hover hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function FoodRow({
+  food,
+  qty,
+  onQty,
+  unit,
+  onUnit,
+  isFav,
+  onToggleFav,
+  isAdding,
+  onAdd,
+}: {
+  food: FoodItem
+  qty: string
+  onQty: (v: string) => void
+  unit: Unit
+  onUnit: (u: Unit) => void
+  isFav: boolean
+  onToggleFav: () => void
+  isAdding: boolean
+  onAdd: () => void
+}) {
+  return (
+    <li className="flex items-center gap-2 py-2.5">
+      <button
+        type="button"
+        onClick={onToggleFav}
+        aria-label={isFav ? `Unfavorite ${food.label}` : `Favorite ${food.label}`}
+        className="shrink-0 rounded-md p-1 transition-colors hover:bg-surface-hover"
+      >
+        <Star
+          className={cn(
+            "size-4 transition-colors",
+            isFav ? "fill-amber text-amber" : "text-muted"
+          )}
+        />
+      </button>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">
+          {food.label}
+          {food.brand && (
+            <span className="ml-1 text-xs text-muted">· {food.brand}</span>
+          )}
+        </p>
+        <p className="text-xs text-muted">
+          {food.caloriesPer100g} kcal · {food.proteinPer100g} g protein / 100 g
+        </p>
+      </div>
+      <input
+        type="number"
+        min={0}
+        step="any"
+        value={qty}
+        onChange={(e) => onQty(e.target.value)}
+        className="w-16 rounded-lg border border-border bg-background px-2 py-1.5 text-right text-sm outline-none focus:border-accent"
+        aria-label={`Quantity of ${food.label}`}
+      />
+      <UnitSelect value={unit} onChange={onUnit} />
+      <button
+        type="button"
+        onClick={onAdd}
+        disabled={isAdding}
+        className="rounded-lg bg-accent/10 p-2 text-accent transition-colors hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
+        aria-label={`Add ${food.label}`}
+      >
+        {isAdding ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Plus className="size-4" />
+        )}
+      </button>
+    </li>
   )
 }
 

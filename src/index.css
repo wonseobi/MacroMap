@@ -28,6 +28,22 @@
   --font-sans: "Manrope", system-ui, -apple-system, sans-serif;
 }
 
+/* Light theme — overrides the dark defaults when <html data-theme="light">. */
+[data-theme="light"] {
+  --color-background: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-surface-hover: #eef0f2;
+  --color-border: #e3e3e8;
+  --color-foreground: #18181b;
+  --color-muted: #6b7280;
+  --color-accent: #16a34a;
+  --color-accent-dim: #bbf7d0;
+  --color-protein: #2563eb;
+  --color-protein-dim: #bfdbfe;
+  --color-danger: #dc2626;
+  --color-amber: #d97706;
+}
+
 /* Hide number input spinners */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {

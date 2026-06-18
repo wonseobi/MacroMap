@@ -41,3 +41,32 @@ export interface FoodLogEntry {
   unit: string
   loggedAt: string
 }
+
+/** A bodyweight measurement on a given day (stored in kg; displayed per units pref). */
+export interface WeightEntry {
+  id: string
+  /** YYYY-MM-DD */
+  date: string
+  weightKg: number
+  loggedAt: string
+}
+
+/** A food the user starred for one-tap re-logging (nutrition per 100 g). */
+export interface FavoriteFood {
+  foodId: string
+  label: string
+  caloriesPer100g: number
+  proteinPer100g: number
+  carbsPer100g: number
+  fatPer100g: number
+  brand?: string
+  addedAt: string
+}
+
+export type ThemeMode = "dark" | "light"
+export type UnitSystem = "metric" | "imperial"
+
+export interface Settings {
+  theme: ThemeMode
+  units: UnitSystem
+}

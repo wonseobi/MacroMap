@@ -1,8 +1,10 @@
 import { useRef, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
-import { Check, Download, Upload, Loader2 } from "lucide-react"
+import { Check, Download, Upload, Loader2, Moon, Sun, Trash2 } from "lucide-react"
 import { useApp } from "@/context/AppContext"
 import { exportData, importData } from "@/lib/backup"
+import { resetAllData } from "@/lib/db"
+import type { ThemeMode, UnitSystem } from "@/types"
 import {
   calculateBmi,
   bmiCategory,
@@ -97,8 +99,15 @@ const GOALS: { value: Goal; label: string; description: string }[] = [
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function EditProfile() {
-  const { profile, setProfile } = useApp()
+  const { profile, setProfile, settings, updateSettings } = useApp()
   const navigate = useNavigate()
+  const [confirmReset, setConfirmReset] = useState(false)
+
+  const handleReset = async () => {
+    await resetAllData()
+    // Hard-navigate to the wizard so all in-memory state clears too.
+    window.location.href = "/"
+  }
 
   const [name, setName] = useState(profile?.name ?? "")
   const [age, setAge] = useState(profile ? String(profile.age) : "")
@@ -392,6 +401,77 @@ export default function EditProfile() {
           </Section>
         )}
 
+        {/* ── Settings ── */}
+        <Section title="Settings">
+          <div className="space-y-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">Appearance</p>
+                <p className="text-xs text-muted">Light or dark theme</p>
+              </div>
+              <Segmented
+                value={settings.theme}
+                onChange={(v) => updateSettings({ theme: v as ThemeMode })}
+                options={[
+                  { value: "dark", label: "Dark", icon: <Moon className="size-3.5" /> },
+                  { value: "light", label: "Light", icon: <Sun className="size-3.5" /> },
+                ]}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">Units</p>
+                <p className="text-xs text-muted">Weight &amp; height display</p>
+              </div>
+              <Segmented
+                value={settings.units}
+                onChange={(v) => updateSettings({ units: v as UnitSystem })}
+                options={[
+                  { value: "metric", label: "Metric" },
+                  { value: "imperial", label: "Imperial" },
+                ]}
+              />
+            </div>
+
+            <div className="border-t border-border pt-4">
+              {!confirmReset ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset(true)}
+                  className="flex items-center gap-2 text-sm text-muted transition-colors hover:text-danger"
+                >
+                  <Trash2 className="size-4" /> Reset all data
+                </button>
+              ) : (
+                <div className="space-y-2.5">
+                  <p className="text-sm text-danger">
+                    This permanently deletes your profile, food log, weight
+                    history, and favorites. This can't be undone — consider
+                    downloading a backup first.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleReset()}
+                      className="rounded-full bg-danger/10 px-4 py-2 text-sm font-semibold text-danger transition-colors hover:bg-danger/20"
+                    >
+                      Yes, delete everything
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmReset(false)}
+                      className="rounded-full border border-border px-4 py-2 text-sm transition-colors hover:bg-surface-hover"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </Section>
+
         {/* ── Backup & restore ── */}
         <Section title="Backup & restore">
           <div className="space-y-4">
@@ -447,6 +527,37 @@ export default function EditProfile() {
           Save changes
         </button>
       </form>
+    </div>
+  )
+}
+
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: { value: T; label: string; icon?: React.ReactNode }[]
+  onChange: (v: T) => void
+}) {
+  return (
+    <div className="flex shrink-0 rounded-full border border-border bg-background p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+            value === o.value
+              ? "bg-foreground/10 text-foreground"
+              : "text-muted hover:text-foreground"
+          )}
+        >
+          {o.icon}
+          {o.label}
+        </button>
+      ))}
     </div>
   )
 }

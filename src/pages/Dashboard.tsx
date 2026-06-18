@@ -1,14 +1,18 @@
 import { useMemo, useState } from "react"
 import { Navigate } from "react-router-dom"
-import { ChevronLeft, ChevronRight, Flame, Trash2 } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, Flame, Pencil, Trash2 } from "lucide-react"
 import TypingTitle from "@/components/TypingTitle"
 import BrandMark from "@/components/BrandMark"
 import MacroComposite from "@/components/MacroComposite"
 import FoodSearch from "@/components/FoodSearch"
+import WeightTracker from "@/components/WeightTracker"
 import Card from "@/components/Card"
 import { useApp } from "@/context/AppContext"
 import { calculateTargets, bmiCategory } from "@/lib/calculations"
 import { dayKey } from "@/lib/db"
+import { UNITS, toGrams, type Unit } from "@/lib/units"
+import { kgToLb } from "@/lib/settings"
+import type { FoodLogEntry } from "@/types"
 
 const GOAL_LABELS: Record<string, string> = {
   lose: "Losing fat",
@@ -18,9 +22,12 @@ const GOAL_LABELS: Record<string, string> = {
 }
 
 export default function Dashboard() {
-  const { profile, foodLog, streak, removeFood, clearDay } = useApp()
+  const { profile, foodLog, streak, removeFood, updateFood, clearDay, settings } =
+    useApp()
   const todayKey = dayKey()
   const [selectedDate, setSelectedDate] = useState(todayKey)
+  const [editing, setEditing] = useState(false)
+  const [editQty, setEditQty] = useState<Record<string, string>>({})
 
   const targets = useMemo(
     () => (profile ? calculateTargets(profile) : null),
@@ -47,6 +54,32 @@ export default function Dashboard() {
     { calories: 0, protein: 0, carbs: 0, fat: 0 }
   )
 
+  const toggleEdit = () => {
+    if (!editing) {
+      setEditQty(
+        Object.fromEntries(selectedLog.map((e) => [e.id, String(e.quantity)]))
+      )
+    }
+    setEditing((on) => !on)
+  }
+
+  // Rescale an entry's macros to a new quantity/unit by the gram ratio.
+  const applyEdit = (entry: FoodLogEntry, quantity: number, unit: string) => {
+    const oldG = toGrams(entry.quantity, entry.unit as Unit)
+    const newG = toGrams(quantity, unit as Unit)
+    if (oldG <= 0 || newG <= 0) return
+    const f = newG / oldG
+    updateFood({
+      ...entry,
+      quantity,
+      unit,
+      calories: Math.round(entry.calories * f),
+      proteinG: Math.round(entry.proteinG * f * 10) / 10,
+      carbG: entry.carbG != null ? Math.round(entry.carbG * f * 10) / 10 : undefined,
+      fatG: entry.fatG != null ? Math.round(entry.fatG * f * 10) / 10 : undefined,
+    })
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
       <BrandMark />
@@ -70,7 +103,15 @@ export default function Dashboard() {
         <h2 className="mb-4 text-base font-semibold">Overview</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Stat label="BMI"    value={targets.bmi.toFixed(1)}            sub={bmiCategory(targets.bmi)} />
-          <Stat label="Weight" value={profile.weightKg.toLocaleString()} sub="kg" />
+          <Stat
+            label="Weight"
+            value={
+              settings.units === "imperial"
+                ? kgToLb(profile.weightKg).toFixed(1)
+                : profile.weightKg.toLocaleString()
+            }
+            sub={settings.units === "imperial" ? "lb" : "kg"}
+          />
           <Stat label="TDEE"   value={targets.tdee.toLocaleString()}      sub="kcal/day" />
           <Stat label="BMR"    value={targets.bmr.toLocaleString()}       sub="kcal/day" />
         </div>
@@ -147,13 +188,30 @@ export default function Dashboard() {
               </button>
             </div>
             {selectedLog.length > 0 && (
-              <button
-                type="button"
-                onClick={() => clearDay(selectedDate)}
-                className="text-xs text-muted transition-colors hover:text-danger"
-              >
-                Clear all
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleEdit}
+                  className="flex items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
+                >
+                  {editing ? (
+                    <>
+                      <Check className="size-3.5" /> Done
+                    </>
+                  ) : (
+                    <>
+                      <Pencil className="size-3.5" /> Edit
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => clearDay(selectedDate)}
+                  className="text-xs text-muted transition-colors hover:text-danger"
+                >
+                  Clear all
+                </button>
+              </div>
             )}
           </div>
           {selectedLog.length === 0 ? (
@@ -168,11 +226,54 @@ export default function Dashboard() {
                 <li key={entry.id} className="flex items-center gap-3 py-2.5">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{entry.label}</p>
-                    <p className="text-xs text-muted">
-                      {entry.quantity} {entry.unit} · {entry.calories} kcal · {entry.proteinG}g protein
-                      {entry.carbG != null && ` · ${entry.carbG}g carbs`}
-                      {entry.fatG  != null && ` · ${entry.fatG}g fat`}
-                    </p>
+                    {editing ? (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={editQty[entry.id] ?? String(entry.quantity)}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setEditQty((q) => ({ ...q, [entry.id]: v }))
+                            const n = parseFloat(v)
+                            if (n > 0) applyEdit(entry, n, entry.unit)
+                          }}
+                          className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-right text-sm outline-none focus:border-accent"
+                          aria-label={`Quantity of ${entry.label}`}
+                        />
+                        <select
+                          value={entry.unit}
+                          onChange={(e) => {
+                            const n = parseFloat(
+                              editQty[entry.id] ?? String(entry.quantity)
+                            )
+                            applyEdit(
+                              entry,
+                              n > 0 ? n : entry.quantity,
+                              e.target.value
+                            )
+                          }}
+                          className="rounded-lg border border-border bg-background px-2 py-1 text-sm text-muted outline-none focus:border-accent"
+                          aria-label={`Unit of ${entry.label}`}
+                        >
+                          {UNITS.map((u) => (
+                            <option key={u} value={u}>
+                              {u}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-xs text-muted tabular-nums">
+                          {entry.calories} kcal
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted">
+                        {entry.quantity} {entry.unit} · {entry.calories} kcal · {entry.proteinG}g protein
+                        {entry.carbG != null && ` · ${entry.carbG}g carbs`}
+                        {entry.fatG  != null && ` · ${entry.fatG}g fat`}
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -187,6 +288,8 @@ export default function Dashboard() {
             </ul>
           )}
         </Card>
+
+        <WeightTracker />
       </div>
     </div>
   )
