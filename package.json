@@ -19,6 +19,7 @@
     "motion": "^12.40.0",
     "ogl": "^1.0.11",
     "react": "^19.2.6",
+    "react-confetti": "^6.4.0",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.17.0",
     "tailwind-merge": "^3.6.0",

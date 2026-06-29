@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom"
 import { AppProvider } from "@/context/AppContext"
 import Navbar from "@/components/Navbar"
+import GoalConfetti from "@/components/GoalConfetti"
 import ProfileSetup from "@/pages/ProfileSetup"
 import Dashboard from "@/pages/Dashboard"
 import EditProfile from "@/pages/EditProfile"
@@ -12,6 +13,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Navbar />
+      <GoalConfetti />
       <div key={pathname} className="animate-page-enter pb-28 md:pb-0 md:pl-20">
         {children}
       </div>
