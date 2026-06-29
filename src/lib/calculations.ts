@@ -1,19 +1,19 @@
 import type { Profile, MacroTargets } from "@/types"
 
+// Standard activity factors keyed to weekly training frequency:
+//   0 sedentary 1.20 · 1–2 light 1.375 · 3–5 moderate 1.55 · 6–7 very active 1.725
 function activityMultiplier(sessionsPerWeek: number): number {
   if (sessionsPerWeek <= 0) return 1.2
   if (sessionsPerWeek <= 2) return 1.375
-  if (sessionsPerWeek <= 4) return 1.55
-  if (sessionsPerWeek <= 6) return 1.725
-  return 1.9
+  if (sessionsPerWeek <= 5) return 1.55
+  return 1.725
 }
 
 export function activityLabel(sessionsPerWeek: number): string {
   if (sessionsPerWeek <= 0) return "Sedentary"
   if (sessionsPerWeek <= 2) return "Lightly Active"
-  if (sessionsPerWeek <= 4) return "Moderately Active"
-  if (sessionsPerWeek <= 6) return "Very Active"
-  return "Extremely Active"
+  if (sessionsPerWeek <= 5) return "Moderately Active"
+  return "Very Active"
 }
 
 function mifflinStJeor(profile: Profile): number {
@@ -25,7 +25,7 @@ function mifflinStJeor(profile: Profile): number {
 const GOAL_CALORIE_ADJUSTMENT: Record<string, number> = {
   lose: -500,
   maintain: 0,
-  gain: 300,
+  gain: 200, // lean-bulk surplus (TDEE + ~200), the low end of 200–300
 }
 
 // Protein per kg bodyweight. Evidence-based ordering: deficit needs the most
@@ -93,8 +93,8 @@ export function calculateTargets(profile: Profile): MacroTargets {
     profile.weightKg * GOAL_PROTEIN_PER_KG[profile.goal]
   )
 
-  // Fat: 25% of calorie target
-  const fatTargetG = Math.round((calorieTarget * 0.25) / 9)
+  // Fat: 0.9 g per kg bodyweight (within the 0.8–1.0 lean-bulk range)
+  const fatTargetG = Math.round(profile.weightKg * 0.9)
   // Carbs: remaining calories after protein and fat
   const carbTargetG = Math.max(
     0,

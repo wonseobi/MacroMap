@@ -85,7 +85,7 @@ function BmiBar({ bmi }: { bmi: number | null }) {
 const GOALS: { value: Goal; label: string; description: string }[] = [
   { value: "lose", label: "Lose fat", description: "−500 kcal/day deficit" },
   { value: "maintain", label: "Maintain", description: "Stay at maintenance" },
-  { value: "gain", label: "Build muscle", description: "+300 kcal/day surplus" },
+  { value: "gain", label: "Build muscle", description: "+200 kcal/day surplus" },
   { value: "custom", label: "Custom", description: "Set your own adjustment" },
 ]
 
