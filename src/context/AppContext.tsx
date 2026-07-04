@@ -27,8 +27,8 @@ import {
   saveWeight as dbSaveWeight,
   deleteWeight,
   loadFavorites,
-  saveFavorite,
   deleteFavorite,
+  saveFavoritesOrder,
 } from "@/lib/db"
 import {
   loadSettings,
@@ -63,6 +63,7 @@ interface AppState {
   favorites: FavoriteFood[]
   addFavorite: (fav: FavoriteFood) => void
   removeFavorite: (foodId: string) => void
+  reorderFavorites: (favs: FavoriteFood[]) => void
   isFavorite: (foodId: string) => boolean
 
   settings: Settings
@@ -129,7 +130,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setProfileState(storedProfile)
       setFoodLog(entries)
       setWeightLog(weights)
-      setFavorites(favs)
+      // Lock in sequential order indices if any are missing (legacy favorites).
+      if (favs.some((f) => f.order == null)) {
+        const normalized = favs.map((f, i) => ({ ...f, order: i }))
+        setFavorites(normalized)
+        void saveFavoritesOrder(normalized)
+      } else {
+        setFavorites(favs)
+      }
       setReady(true)
     })()
     return () => {
@@ -178,13 +186,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   const addFavorite = (fav: FavoriteFood) => {
-    setFavorites((favs) => [fav, ...favs.filter((f) => f.foodId !== fav.foodId)])
-    void saveFavorite(fav)
+    setFavorites((favs) => {
+      // New favorites go to the top; re-index the whole list and persist.
+      const next = [fav, ...favs.filter((f) => f.foodId !== fav.foodId)].map(
+        (f, i) => ({ ...f, order: i })
+      )
+      void saveFavoritesOrder(next)
+      return next
+    })
   }
 
   const removeFavorite = (foodId: string) => {
-    setFavorites((favs) => favs.filter((f) => f.foodId !== foodId))
-    void deleteFavorite(foodId)
+    setFavorites((favs) => {
+      const next = favs
+        .filter((f) => f.foodId !== foodId)
+        .map((f, i) => ({ ...f, order: i }))
+      void deleteFavorite(foodId)
+      void saveFavoritesOrder(next)
+      return next
+    })
+  }
+
+  const reorderFavorites = (favs: FavoriteFood[]) => {
+    const next = favs.map((f, i) => ({ ...f, order: i }))
+    setFavorites(next)
+    void saveFavoritesOrder(next)
   }
 
   const favoriteIds = useMemo(
@@ -232,6 +258,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         favorites,
         addFavorite,
         removeFavorite,
+        reorderFavorites,
         isFavorite,
         settings,
         updateSettings,

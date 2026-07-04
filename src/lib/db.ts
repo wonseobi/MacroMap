@@ -103,11 +103,22 @@ export async function deleteWeight(id: string): Promise<void> {
 
 export async function loadFavorites(): Promise<FavoriteFood[]> {
   const all = await db.favorites.toArray()
-  return all.sort((a, b) => b.addedAt.localeCompare(a.addedAt)) // newest first
+  return all.sort((a, b) => {
+    // Manual order first; legacy items without one fall back to newest-first.
+    const ao = a.order ?? Number.MAX_SAFE_INTEGER
+    const bo = b.order ?? Number.MAX_SAFE_INTEGER
+    if (ao !== bo) return ao - bo
+    return b.addedAt.localeCompare(a.addedAt)
+  })
 }
 
 export async function saveFavorite(fav: FavoriteFood): Promise<void> {
   await db.favorites.put(fav)
+}
+
+/** Persist the whole favorites list with their current order (bulk upsert). */
+export async function saveFavoritesOrder(favs: FavoriteFood[]): Promise<void> {
+  await db.favorites.bulkPut(favs)
 }
 
 export async function deleteFavorite(foodId: string): Promise<void> {

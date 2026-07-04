@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react"
-import { ChevronDown, Loader2, Plus, Search, Star, X } from "lucide-react"
+import {
+  ChevronDown,
+  GripVertical,
+  Loader2,
+  Plus,
+  Search,
+  Star,
+  X,
+} from "lucide-react"
 import {
   searchFoods,
   isLiveApiConfigured,
@@ -25,8 +33,17 @@ interface FoodItem {
 
 /** Search foods (USDA) or pick from favorites, then add them to the log. */
 export default function FoodSearch() {
-  const { addFood, favorites, addFavorite, removeFavorite, isFavorite } = useApp()
+  const {
+    addFood,
+    favorites,
+    addFavorite,
+    removeFavorite,
+    reorderFavorites,
+    isFavorite,
+  } = useApp()
   const [tab, setTab] = useState<"search" | "favorites">("search")
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<FoodSearchResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -109,7 +126,18 @@ export default function FoodSearch() {
     setQty((q) => ({ ...q, [foodId]: u === "g" || u === "ml" ? "100" : "1" }))
   }
 
-  const renderRow = (food: FoodItem) => (
+  const handleDrop = () => {
+    if (dragIndex !== null && overIndex !== null && dragIndex !== overIndex) {
+      const next = [...favorites]
+      const [moved] = next.splice(dragIndex, 1)
+      next.splice(overIndex, 0, moved)
+      reorderFavorites(next)
+    }
+    setDragIndex(null)
+    setOverIndex(null)
+  }
+
+  const renderRow = (food: FoodItem, sortable?: FoodRowSortable) => (
     <FoodRow
       key={food.foodId}
       food={food}
@@ -121,6 +149,7 @@ export default function FoodSearch() {
       onToggleFav={() => toggleFavorite(food)}
       isAdding={addingIds.has(food.foodId)}
       onAdd={() => handleAdd(food)}
+      sortable={sortable}
     />
   )
 
@@ -187,7 +216,7 @@ export default function FoodSearch() {
 
           {results.length > 0 && (
             <ul className="mt-3 divide-y divide-border">
-              {results.map(renderRow)}
+              {results.map((food) => renderRow(food))}
             </ul>
           )}
 
@@ -201,7 +230,24 @@ export default function FoodSearch() {
           a search result to save it here for one-tap logging.
         </p>
       ) : (
-        <ul className="divide-y divide-border">{favorites.map(renderRow)}</ul>
+        <>
+          <p className="mb-2 text-xs text-muted">Drag the handle to reorder.</p>
+          <ul className="divide-y divide-border">
+            {favorites.map((food, i) =>
+              renderRow(food, {
+                dragging: dragIndex === i,
+                over: overIndex === i && dragIndex !== null && dragIndex !== i,
+                onDragStart: () => setDragIndex(i),
+                onDragEnter: () => setOverIndex(i),
+                onDrop: handleDrop,
+                onDragEnd: () => {
+                  setDragIndex(null)
+                  setOverIndex(null)
+                },
+              })
+            )}
+          </ul>
+        </>
       )}
     </Card>
   )
@@ -232,6 +278,15 @@ function TabButton({
   )
 }
 
+interface FoodRowSortable {
+  dragging: boolean
+  over: boolean
+  onDragStart: () => void
+  onDragEnter: () => void
+  onDrop: () => void
+  onDragEnd: () => void
+}
+
 function FoodRow({
   food,
   qty,
@@ -242,6 +297,7 @@ function FoodRow({
   onToggleFav,
   isAdding,
   onAdd,
+  sortable,
 }: {
   food: FoodItem
   qty: string
@@ -252,9 +308,30 @@ function FoodRow({
   onToggleFav: () => void
   isAdding: boolean
   onAdd: () => void
+  sortable?: FoodRowSortable
 }) {
   return (
-    <li className="flex items-center gap-2 py-2.5">
+    <li
+      className={cn(
+        "flex items-center gap-2 py-2.5 transition-colors",
+        sortable?.dragging && "opacity-40",
+        sortable?.over && "bg-surface-hover"
+      )}
+      onDragOver={sortable ? (e) => e.preventDefault() : undefined}
+      onDragEnter={sortable?.onDragEnter}
+      onDrop={sortable?.onDrop}
+    >
+      {sortable && (
+        <span
+          draggable
+          onDragStart={sortable.onDragStart}
+          onDragEnd={sortable.onDragEnd}
+          aria-label="Drag to reorder"
+          className="shrink-0 cursor-grab text-muted transition-colors hover:text-foreground active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </span>
+      )}
       <button
         type="button"
         onClick={onToggleFav}

@@ -61,6 +61,8 @@ export interface FavoriteFood {
   fatPer100g: number
   brand?: string
   addedAt: string
+  /** Manual sort position (lower = higher in the list). */
+  order?: number
 }
 
 export type ThemeMode = "dark" | "light"
