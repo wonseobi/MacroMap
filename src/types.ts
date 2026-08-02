@@ -63,6 +63,9 @@ export interface FavoriteFood {
   addedAt: string
   /** Manual sort position (lower = higher in the list). */
   order?: number
+  /** Remembered logging amount so the user doesn't re-enter it each day. */
+  defaultQty?: number
+  defaultUnit?: string
 }
 
 export type ThemeMode = "dark" | "light"

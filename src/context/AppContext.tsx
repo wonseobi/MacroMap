@@ -28,6 +28,7 @@ import {
   deleteWeight,
   loadFavorites,
   deleteFavorite,
+  saveFavorite,
   saveFavoritesOrder,
 } from "@/lib/db"
 import {
@@ -64,6 +65,8 @@ interface AppState {
   addFavorite: (fav: FavoriteFood) => void
   removeFavorite: (foodId: string) => void
   reorderFavorites: (favs: FavoriteFood[]) => void
+  /** Remember a favorite's logging amount (quantity + unit) across sessions. */
+  setFavoriteAmount: (foodId: string, qty: number, unit: string) => void
   isFavorite: (foodId: string) => boolean
 
   settings: Settings
@@ -213,6 +216,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void saveFavoritesOrder(next)
   }
 
+  const setFavoriteAmount = (foodId: string, qty: number, unit: string) => {
+    setFavorites((favs) => {
+      const next = favs.map((f) =>
+        f.foodId === foodId ? { ...f, defaultQty: qty, defaultUnit: unit } : f
+      )
+      const updated = next.find((f) => f.foodId === foodId)
+      if (updated) void saveFavorite(updated)
+      return next
+    })
+  }
+
   const favoriteIds = useMemo(
     () => new Set(favorites.map((f) => f.foodId)),
     [favorites]
@@ -259,6 +273,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addFavorite,
         removeFavorite,
         reorderFavorites,
+        setFavoriteAmount,
         isFavorite,
         settings,
         updateSettings,

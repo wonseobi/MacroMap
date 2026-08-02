@@ -17,6 +17,7 @@ import { useApp } from "@/context/AppContext"
 import { dayKey } from "@/lib/db"
 import { UNITS, toGrams, type Unit } from "@/lib/units"
 import { playLogSound } from "@/lib/sound"
+import type { FavoriteFood } from "@/types"
 import Card from "@/components/Card"
 import { cn } from "@/lib/utils"
 
@@ -39,6 +40,7 @@ export default function FoodSearch() {
     addFavorite,
     removeFavorite,
     reorderFavorites,
+    setFavoriteAmount,
     isFavorite,
   } = useApp()
   const [tab, setTab] = useState<"search" | "favorites">("search")
@@ -116,7 +118,14 @@ export default function FoodSearch() {
     if (isFavorite(food.foodId)) {
       removeFavorite(food.foodId)
     } else {
-      addFavorite({ ...food, addedAt: new Date().toISOString() })
+      // Capture whatever amount is currently entered so it's remembered.
+      const q = parseFloat(qty[food.foodId] ?? "100")
+      addFavorite({
+        ...food,
+        addedAt: new Date().toISOString(),
+        defaultQty: q > 0 ? q : 100,
+        defaultUnit: unit[food.foodId] ?? "g",
+      })
     }
   }
 
@@ -137,21 +146,41 @@ export default function FoodSearch() {
     setOverIndex(null)
   }
 
-  const renderRow = (food: FoodItem, sortable?: FoodRowSortable) => (
-    <FoodRow
-      key={food.foodId}
-      food={food}
-      qty={qty[food.foodId] ?? "100"}
-      onQty={(v) => setQty((q) => ({ ...q, [food.foodId]: v }))}
-      unit={unit[food.foodId] ?? "g"}
-      onUnit={(u) => setUnitFor(food.foodId, u)}
-      isFav={isFavorite(food.foodId)}
-      onToggleFav={() => toggleFavorite(food)}
-      isAdding={addingIds.has(food.foodId)}
-      onAdd={() => handleAdd(food)}
-      sortable={sortable}
-    />
-  )
+  const renderRow = (
+    food: FoodItem,
+    opts?: { sortable?: FoodRowSortable; favorite?: FavoriteFood }
+  ) => {
+    const fav = opts?.favorite
+    // Favorites seed their input from the remembered amount; live edits (local
+    // state) take over while typing and are persisted back onto the favorite.
+    const qtyValue =
+      qty[food.foodId] ??
+      (fav?.defaultQty != null ? String(fav.defaultQty) : "100")
+    const unitValue = (unit[food.foodId] ?? fav?.defaultUnit ?? "g") as Unit
+    return (
+      <FoodRow
+        key={food.foodId}
+        food={food}
+        qty={qtyValue}
+        onQty={(v) => {
+          setQty((q) => ({ ...q, [food.foodId]: v }))
+          const n = parseFloat(v)
+          if (fav && n > 0) setFavoriteAmount(food.foodId, n, unitValue)
+        }}
+        unit={unitValue}
+        onUnit={(u) => {
+          setUnitFor(food.foodId, u)
+          // setUnitFor resets qty to 100/1; remember that with the new unit.
+          if (fav) setFavoriteAmount(food.foodId, u === "g" || u === "ml" ? 100 : 1, u)
+        }}
+        isFav={isFavorite(food.foodId)}
+        onToggleFav={() => toggleFavorite(food)}
+        isAdding={addingIds.has(food.foodId)}
+        onAdd={() => handleAdd(food)}
+        sortable={opts?.sortable}
+      />
+    )
+  }
 
   return (
     <Card className="p-5">
@@ -235,14 +264,17 @@ export default function FoodSearch() {
           <ul className="divide-y divide-border">
             {favorites.map((food, i) =>
               renderRow(food, {
-                dragging: dragIndex === i,
-                over: overIndex === i && dragIndex !== null && dragIndex !== i,
-                onDragStart: () => setDragIndex(i),
-                onDragEnter: () => setOverIndex(i),
-                onDrop: handleDrop,
-                onDragEnd: () => {
-                  setDragIndex(null)
-                  setOverIndex(null)
+                favorite: food,
+                sortable: {
+                  dragging: dragIndex === i,
+                  over: overIndex === i && dragIndex !== null && dragIndex !== i,
+                  onDragStart: () => setDragIndex(i),
+                  onDragEnter: () => setOverIndex(i),
+                  onDrop: handleDrop,
+                  onDragEnd: () => {
+                    setDragIndex(null)
+                    setOverIndex(null)
+                  },
                 },
               })
             )}
